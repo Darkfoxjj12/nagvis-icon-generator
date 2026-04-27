@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="appTitle">Générateur d'Icônes NagVis</title>
+    <!-- Utilisation de Tailwind CSS via CDN pour un design moderne et responsive sans fichier CSS externe -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Ajout de JSZip pour la génération du fichier ZIP côté client sans backend -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        // Configuration de Tailwind pour autoriser le basculement manuel du Dark Mode
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    <style>
+        /* Styles personnalisés minimaux pour l'animation du toast d'erreur */
+        @keyframes slideIn {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-enter {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        /* Motif de fond pour visualiser la transparence des icônes générées */
+        .bg-checkerboard {
+            background-color: #f0f0f0;
+            background-image: 
+                linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc),
+                linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc);
+            background-size: 10px 10px;
+            background-position: 0 0, 5px 5px;
+        }
+        /* Motif de fond plus foncé pour le checkerboard en mode sombre */
+        .dark .bg-checkerboard {
+            background-color: #374151;
+            background-image: 
+                linear-gradient(45deg, #4b5563 25%, transparent 25%, transparent 75%, #4b5563 75%, #4b5563),
+                linear-gradient(45deg, #4b5563 25%, transparent 25%, transparent 75%, #4b5563 75%, #4b5563);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-200">
+
+    <!-- En-tête -->
+    <header class="bg-blue-600 dark:bg-blue-800 text-white py-6 shadow-md transition-colors duration-200">
+        <div class="max-w-5xl mx-auto px-4 flex justify-between items-start">
+            <div>
+                <h1 class="text-3xl font-bold flex items-center gap-3">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <span data-i18n="appTitle">Générateur d'Icônes NagVis</span>
+                </h1>
+                <p class="text-blue-100 mt-2" data-i18n="appDesc">Générez automatiquement votre jeu d'icônes 32x32 (11 états) en un clic. Traitement 100% local.</p>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- Sélecteur de langue -->
+                <select id="langSelect" class="bg-blue-700 dark:bg-blue-900 text-white border border-blue-500 dark:border-blue-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-white cursor-pointer transition-colors duration-200 font-medium">
+                    <option value="fr">Français</option>
+                    <option value="en">English</option>
+                </select>
+
+                <!-- Bouton Toggle Dark Mode -->
+                <button id="themeToggle" class="p-2 rounded-full hover:bg-blue-700 dark:hover:bg-blue-700 transition-colors focus:outline-none" data-i18n-title="themeTitle" title="Basculer le thème">
+                    <!-- Icône Soleil (affichée en mode sombre) -->
+                    <svg id="sunIcon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <!-- Icône Lune (affichée en mode clair) -->
+                    <svg id="moonIcon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenu principal -->
+    <main class="flex-grow max-w-5xl mx-auto px-4 py-8 w-full">
+        
+        <!-- Zone de paramétrage -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-colors duration-200">
+            <h2 class="text-xl font-semibold mb-4 border-b dark:border-gray-700 pb-2" data-i18n="configTitle">Configuration de l'Iconset</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                
+                <!-- Input Fichier (Drag & Drop) -->
+                <div class="md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" data-i18n="step1Label">
+                        1. Image source (PNG transparent)
+                    </label>
+                    <div id="dropZone" class="relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors cursor-pointer flex flex-col items-center justify-center h-32 group">
+                        <input type="file" id="imageInput" accept="image/png" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                        <svg class="w-8 h-8 text-gray-400 group-hover:text-blue-500 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <p id="dropZoneText" class="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                            <span id="dropMain" data-i18n="dropMain">Glissez un PNG ici</span><br>
+                            <span id="dropSub" class="text-xs font-normal" data-i18n="dropSub">ou cliquez pour parcourir</span>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Section de droite : Préfixe, Taille, Couleurs -->
+                <div class="flex flex-col gap-6 md:col-span-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <!-- Input Préfixe -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" for="prefixInput" data-i18n="step2Label">
+                                2. Préfixe du nom (ex: cam)
+                            </label>
+                            <input type="text" id="prefixInput" data-i18n-placeholder="step2Placeholder" placeholder="Ex: camera_ext" 
+                                class="block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"/>
+                        </div>
+
+                        <!-- Input Taille -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" for="sizeInput" data-i18n="step3Label">
+                                3. Taille de l'icône
+                            </label>
+                            <select id="sizeInput" class="block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors duration-200">
+                                <option value="8">8x8 px</option>
+                                <option value="16">16x16 px</option>
+                                <option value="32" selected>32x32 px</option>
+                                <option value="64">64x64 px</option>
+                                <option value="128">128x128 px</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Personnalisation des couleurs -->
+                    <div class="border-t dark:border-gray-700 pt-4">
+                        <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 cursor-pointer flex items-center gap-2 select-none hover:text-blue-600 dark:hover:text-blue-400" id="toggleColorsBtn">
+                            <svg class="w-4 h-4 transition-transform duration-200" id="colorsIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            <span data-i18n="step4Label">4. Personnaliser les couleurs (Avancé)</span>
+                        </h3>
+                        <div id="colorSettings" class="hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                            <!-- Les sélecteurs de couleurs seront injectés ici par JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bouton Générer -->
+            <div class="mt-6 flex justify-end">
+                <button id="generateBtn" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-md shadow-sm transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                    <span data-i18n="generateBtn">Générer les 11 états</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Zone de résultats -->
+        <section id="resultSection" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3 text-gray-800 dark:text-gray-100">
+                    <span data-i18n="resultsTitle">Résultats générés</span>
+                    <span class="text-sm font-normal text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded-full hidden md:inline-block" data-i18n="resultsBadge">Cliquez sur une icône pour la télécharger</span>
+                </div>
+                <button id="downloadZipBtn" class="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-md shadow-sm transition-colors flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <span data-i18n="downloadZip">Tout télécharger (.zip)</span>
+                </button>
+            </h2>
+            <!-- Grille des icônes générées -->
+            <div id="outputGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <!-- Les cartes d'icônes seront injectées ici par JavaScript -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Système de notification (Message Box au lieu de alert()) -->
+    <div id="toast" class="fixed top-4 right-4 max-w-sm w-full bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-lg hidden z-50">
+        <div class="flex items-start">
+            <svg class="h-5 w-5 text-red-500 mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <div>
+                <h3 class="font-bold text-sm" data-i18n="toastErrTitle">Erreur</h3>
+                <p id="toastMessage" class="text-sm mt-1"></p>
+            </div>
+            <button onclick="hideToast()" class="ml-auto text-red-500 hover:text-red-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts Logiques -->
+    <script>
+        // --- GESTION DES LANGUES (i18n) ---
+        const translations = {
+            fr: {
+                appTitle: "Générateur d'Icônes NagVis",
+                appDesc: "Générez automatiquement votre jeu d'icônes 32x32 (11 états) en un clic. Traitement 100% local.",
+                configTitle: "Configuration de l'Iconset",
+                step1Label: "1. Image source (PNG transparent)",
+                dropMain: "Glissez un PNG ici",
+                dropSub: "ou cliquez pour parcourir",
+                step2Label: "2. Préfixe du nom (ex: cam)",
+                step2Placeholder: "Ex: camera_ext",
+                step3Label: "3. Taille de l'icône",
+                step4Label: "4. Personnaliser les couleurs (Avancé)",
+                generateBtn: "Générer les 11 états",
+                resultsTitle: "Résultats générés",
+                resultsBadge: "Cliquez sur une icône pour la télécharger",
+                downloadZip: "Tout télécharger (.zip)",
+                errNoImage: "Veuillez sélectionner une image PNG avec fond transparent.",
+                errNoPrefix: "Veuillez saisir un préfixe pour le nom de vos fichiers.",
+                errLoadImg: "Erreur lors du chargement de l'image. Est-ce bien un fichier valide ?",
+                errZip: "Erreur lors de la création de l'archive ZIP.",
+                dropActive: "Cliquez ou glissez pour modifier",
+                toastErrTitle: "Erreur",
+                themeTitle: "Basculer le thème",
+                downloadHover: "Télécharger"
+            },
+            en: {
+                appTitle: "NagVis Icon Generator",
+                appDesc: "Automatically generate your 32x32 icon set (11 states) in one click. 100% local processing.",
+                configTitle: "Iconset Configuration",
+                step1Label: "1. Source image (Transparent PNG)",
+                dropMain: "Drop a PNG here",
+                dropSub: "or click to browse",
+                step2Label: "2. Name prefix (e.g., cam)",
+                step2Placeholder: "E.g., camera_ext",
+                step3Label: "3. Icon size",
+                step4Label: "4. Customize colors (Advanced)",
+                generateBtn: "Generate 11 states",
+                resultsTitle: "Generated results",
+                resultsBadge: "Click an icon to download",
+                downloadZip: "Download all (.zip)",
+                errNoImage: "Please select a PNG image with a transparent background.",
+                errNoPrefix: "Please enter a prefix for your file names.",
+                errLoadImg: "Error loading image. Is it a valid file?",
+                errZip: "Error creating ZIP archive.",
+                dropActive: "Click or drop to change",
+                toastErrTitle: "Error",
+                themeTitle: "Toggle theme",
+                downloadHover: "Download"
+            }
+        };
+
+        let currentLang = localStorage.getItem('nagvisLang') || 'fr';
+
+        function t(key) {
+            return translations[currentLang][key] || key;
+        }
+
+        function applyLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('nagvisLang', lang);
+            document.documentElement.lang = lang;
+            
+            const langSelect = document.getElementById('langSelect');
+            if (langSelect) langSelect.value = lang;
+
+            // Update DOM text
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+
+            // Update placeholders and titles
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+            });
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                el.title = t(el.getAttribute('data-i18n-title'));
+            });
+            
+            // Re-render dropzone text safely if a file is already selected
+            const imageInput = document.getElementById('imageInput');
+            const dropZoneText = document.getElementById('dropZoneText');
+            if (imageInput && imageInput.files.length > 0) {
+                const fileName = imageInput.files[0].name;
+                dropZoneText.innerHTML = `<span class="text-blue-600 dark:text-blue-400 font-bold">${fileName}</span><br><span class="text-xs font-normal" data-i18n="dropActive">${t('dropActive')}</span>`;
+            }
+        }
+
+        // Configuration des états et couleurs demandés
+        const nagvisStates = [
+            { suffix: '_up',           color: '#28A745', label: 'Up' },
+            { suffix: '_ok',           color: '#28A745', label: 'OK' },
+            { suffix: '_warning',      color: '#FD7E14', label: 'Warning' },
+            { suffix: '_down',         color: '#DC3545', label: 'Down' },
+            { suffix: '_critical',     color: '#DC3545', label: 'Critical' },
+            { suffix: '_unreachable',  color: '#6F42C1', label: 'Unreachable' },
+            { suffix: '_unknown',      color: '#6C757D', label: 'Unknown' },
+            { suffix: '_error',        color: '#6C757D', label: 'Error' },
+            { suffix: '_pending',      color: '#17A2B8', label: 'Pending' },
+            { suffix: '_ack',          color: '#FFC107', label: 'Acknowledge' },
+            { suffix: '_sack',         color: '#FFC107', label: 'Service Ack.' }
+        ];
+
+        // Initialisation de l'interface des couleurs personnalisées
+        function initColorPickers() {
+            const container = document.getElementById('colorSettings');
+            
+            nagvisStates.forEach((state, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex flex-col p-2 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-800 transition-colors duration-200';
+                div.innerHTML = `
+                    <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1 truncate" title="${state.label}">${state.label}</label>
+                    <div class="flex items-center gap-2">
+                        <input type="color" id="color_${index}" value="${state.color}" class="h-10 w-full cursor-pointer rounded border border-gray-300 dark:border-gray-600 p-0.5 bg-white dark:bg-gray-700">
+                    </div>
+                `;
+                
+                // Mettre à jour la couleur dans l'objet d'état quand l'utilisateur la modifie
+                div.querySelector('input').addEventListener('input', (e) => {
+                    state.color = e.target.value;
+                });
+                
+                container.appendChild(div);
+            });
+
+            // Gestion de l'affichage/masquage du panneau
+            document.getElementById('toggleColorsBtn').addEventListener('click', () => {
+                const colorSettings = document.getElementById('colorSettings');
+                const icon = document.getElementById('colorsIcon');
+                
+                colorSettings.classList.toggle('hidden');
+                if (colorSettings.classList.contains('hidden')) {
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    icon.style.transform = 'rotate(90deg)';
+                }
+            });
+        }
+
+        // --- GESTION DU MODE SOMBRE ---
+        function initDarkMode() {
+            const themeToggleBtn = document.getElementById('themeToggle');
+            const sunIcon = document.getElementById('sunIcon');
+            const moonIcon = document.getElementById('moonIcon');
+
+            // Vérifie les préférences sauvegardées ou celles du système
+            if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                document.documentElement.classList.remove('dark');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+
+            // Au clic, on bascule et on sauvegarde dans le LocalStorage
+            themeToggleBtn.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+                
+                if (document.documentElement.classList.contains('dark')) {
+                    localStorage.setItem('theme', 'dark');
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                } else {
+                    localStorage.setItem('theme', 'light');
+                    sunIcon.classList.add('hidden');
+                    moonIcon.classList.remove('hidden');
+                }
+            });
+        }
+
+        // --- GESTION DU DRAG & DROP ---
+        function initDragAndDrop() {
+            const dropZone = document.getElementById('dropZone');
+            const imageInput = document.getElementById('imageInput');
+            const dropZoneText = document.getElementById('dropZoneText');
+
+            // Effets visuels au survol de la zone
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-gray-700', 'dark:border-blue-500');
+                });
+            });
+
+            // Retrait des effets quand on sort ou qu'on lâche
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-gray-700', 'dark:border-blue-500');
+                });
+            });
+
+            // Mettre à jour le texte quand un fichier est sélectionné
+            imageInput.addEventListener('change', () => {
+                if (imageInput.files.length > 0) {
+                    const fileName = imageInput.files[0].name;
+                    dropZoneText.innerHTML = `<span class="text-blue-600 dark:text-blue-400 font-bold">${fileName}</span><br><span class="text-xs font-normal" data-i18n="dropActive">${t('dropActive')}</span>`;
+                }
+            });
+        }
+
+        // Appel des initialisations au chargement de la page
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialisation de la langue
+            const langSelect = document.getElementById('langSelect');
+            if (langSelect) {
+                langSelect.addEventListener('change', (e) => applyLanguage(e.target.value));
+            }
+            applyLanguage(currentLang);
+
+            initColorPickers();
+            initDarkMode();
+            initDragAndDrop();
+        });
+
+        // Variable pour stocker temporairement les images à zipper
+        let zipImagesData = [];
+
+        // Gestionnaire du clic sur "Générer"
+        document.getElementById('generateBtn').addEventListener('click', () => {
+            const fileInput = document.getElementById('imageInput');
+            const prefixInput = document.getElementById('prefixInput').value.trim();
+            const file = fileInput.files[0];
+
+            // Validation basique
+            if (!file) {
+                showToast(t('errNoImage'));
+                return;
+            }
+            if (!prefixInput) {
+                showToast(t('errNoPrefix'));
+                return;
+            }
+
+            // Lecture du fichier image
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    processImage(img, prefixInput);
+                };
+                img.onerror = () => {
+                    showToast(t('errLoadImg'));
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Fonction principale de traitement de l'image
+        function processImage(sourceImage, prefix) {
+            const outputGrid = document.getElementById('outputGrid');
+            const resultSection = document.getElementById('resultSection');
+            const size = parseInt(document.getElementById('sizeInput').value, 10);
+            
+            // Nettoyage de la grille précédente et des données pour le ZIP
+            outputGrid.innerHTML = '';
+            zipImagesData = [];
+            
+            // Création d'un canvas en mémoire pour les calculs avec la taille dynamique sélectionnée
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            
+            // Qualité du redimensionnement (antialiasing)
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            // Génération pour chaque état de NagVis
+            nagvisStates.forEach(state => {
+                // 1. Nettoyer le canvas
+                ctx.clearRect(0, 0, size, size);
+                
+                // 2. Restaurer le mode de composition par défaut et dessiner l'image source réduite
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(sourceImage, 0, 0, size, size);
+                
+                // 3. Magie de recolorisation :
+                ctx.globalCompositeOperation = 'source-in';
+                ctx.fillStyle = state.color;
+                ctx.fillRect(0, 0, size, size);
+                
+                // 4. Extraction du résultat en base64 PNG
+                const dataUrl = canvas.toDataURL('image/png');
+                const filename = `${prefix}${state.suffix}.png`;
+                
+                // Sauvegarde pour l'export ZIP (on extrait juste la partie Base64 pure)
+                zipImagesData.push({
+                    filename: filename,
+                    base64Data: dataUrl.split(',')[1]
+                });
+                
+                // 5. Création de l'interface utilisateur pour ce fichier
+                createDownloadCard(dataUrl, filename, state);
+            });
+
+            // Afficher la zone de résultat
+            resultSection.classList.remove('hidden');
+            
+            // Petit scroll doux vers les résultats
+            resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Action de génération du ZIP
+        document.getElementById('downloadZipBtn').addEventListener('click', () => {
+            if (zipImagesData.length === 0) return;
+            
+            const zip = new JSZip();
+            const prefix = document.getElementById('prefixInput').value.trim() || 'iconset';
+            
+            // On regroupe tout dans un dossier au nom du préfixe pour que ça soit propre à l'extraction
+            const imgFolder = zip.folder(prefix);
+            
+            // Ajout des images au ZIP
+            zipImagesData.forEach(img => {
+                imgFolder.file(img.filename, img.base64Data, {base64: true});
+            });
+            
+            // Compilation et téléchargement
+            zip.generateAsync({type:"blob"}).then(function(content) {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `${prefix}_nagvis_icons.zip`;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            }).catch(err => {
+                showToast(t('errZip'));
+                console.error(err);
+            });
+        });
+
+        // Fonction de création de l'élément visuel pour télécharger
+        function createDownloadCard(dataUrl, filename, state) {
+            const grid = document.getElementById('outputGrid');
+            
+            // Construction de la carte via template string
+            const cardHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow group">
+                    <a href="${dataUrl}" download="${filename}" class="block p-4 flex flex-col items-center justify-center text-center cursor-pointer relative" title="${t('downloadHover')} ${filename}">
+                        
+                        <!-- Icône ajustée visuellement dans une boite fixe (pour garder une belle grille) -->
+                        <div class="bg-checkerboard rounded border border-gray-100 dark:border-gray-600 p-2 mb-3 w-16 h-16 flex items-center justify-center">
+                            <img src="${dataUrl}" alt="${state.label}" class="max-w-full max-h-full object-contain rendering-pixelated" />
+                        </div>
+                        
+                        <!-- Nom du fichier -->
+                        <span class="text-xs font-mono text-gray-600 dark:text-gray-300 break-all w-full leading-tight mb-1">
+                            ${filename}
+                        </span>
+                        
+                        <!-- Puce de couleur et label -->
+                        <div class="flex items-center gap-1 mt-1">
+                            <span class="w-2 h-2 rounded-full inline-block" style="background-color: ${state.color};"></span>
+                            <span class="text-[10px] text-gray-400 dark:text-gray-500 font-medium uppercase tracking-wider">${state.label}</span>
+                        </div>
+
+                        <!-- Overlay au survol -->
+                        <div class="absolute inset-0 bg-blue-500 bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                            <svg class="w-6 h-6 text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        </div>
+                    </a>
+                </div>
+            `;
+            
+            // Ajout à la grille
+            grid.insertAdjacentHTML('beforeend', cardHTML);
+        }
+
+        // Fonctions de gestion de la Message Box (Toast) personnalisée
+        let toastTimeout;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            
+            toastMessage.textContent = message;
+            toast.classList.remove('hidden');
+            toast.classList.add('toast-enter');
+            
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                hideToast();
+            }, 5000);
+        }
+
+        function hideToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.remove('toast-enter');
+            toast.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
